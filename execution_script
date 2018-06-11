@@ -1,0 +1,43 @@
+//actionscript linear deploy means that if this completes then it will resolve this setting
+setting "Production_Baseline_Status"="Completed_with_Error" on "{now}" for client
+
+// Detect the printer via Enum
+if { exists values whose (it as string contains "Ithaca_M280") of keys of key "HKLM\SYSTEM\CurrentControlSet\Services\usbprint" of native registry } 
+  parameter "printer_type" = "Ithaca_280"
+  parameter "printer_driver" = "OPOS"
+  // This type of device requires the OPOS service to be installed first
+  if { not exists service "OPOSDeviceController" }
+    exit {1}
+  endif
+elseif { exists key "HKLM\SYSTEM\CurrentControlSet\Services\TMUSB" of native registry AND exists values whose (it as string contains "VID_04B8&PID_0202") of keys of key "HKLM\SYSTEM\CurrentControlSet\Services\TMUSB" of native registry }
+  parameter "printer_type" = "Epson_TM-T88V"
+  parameter "printer_driver" = "JPOS_CASHDRAWER"
+else
+  parameter "printer_type" = "NOT_FOUND"
+  parameter "printer_driver" = "NOT_FOUND"
+endif
+
+
+// Restart OPOS service if Ithaca_280
+if { parameter "printer_type" = "Ithaca_280" }
+  waithidden net stop OPOSDeviceController
+  waithidden sc config "OPOSDeviceController" start=auto
+  waithidden net start OPOSDeviceController
+endif
+
+
+// Restart the service
+waithidden net stop "EngageWin10PosDeviceService"
+waithidden net start "EngageWin10PosDeviceService"
+
+// Do not restart Engage if we did not find a printer
+if { parameter "printer_type" = "NOT_FOUND" }
+  exit {1}
+endif
+
+//restarts engage service (warning 5-15min downtime)
+waithidden net stop Engage
+waithidden net start Engage
+
+//sets baseline status to completed listing no issues
+setting "Production_Baseline_Status"="Completed" on "{now}" for client
